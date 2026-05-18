@@ -1,0 +1,99 @@
+{
+  "defaults": {
+    "source": {
+      "type": "prometheus",
+      "prometheus": {
+        "url": "https://prometheus.your-company.com",
+        "step": "5m",
+        "disable_ssl": true
+      },
+      "time_range": { "lookback_days": 14 }
+    },
+    "detector": {
+      "algorithm": "rolling_iqr",
+      "params": {
+        "window": 60,
+        "scale": 1.5,
+        "min_periods": 30
+      }
+    },
+    "output": {
+      "clickhouse": { "table": "anomaly_results" },
+      "console": true,
+      "only_anomalies": true
+    }
+  },
+  "metrics": [
+    {
+      "service": "api-gateway",
+      "metric": "memory_gb",
+      "source": {
+        "query": "sum(container_memory_working_set_bytes{container='api-gateway'})",
+        "preprocess": { "scale": 1e-9 }
+      }
+    },
+    {
+      "service": "api-gateway",
+      "metric": "rps",
+      "source": {
+        "query": "sum(rate(http_requests_total{service='api-gateway'}[1m]))"
+      },
+      "detector": {
+        "algorithm": "rolling_zscore",
+        "params": {
+          "window": 120,
+          "threshold": 2.5,
+          "min_periods": 60
+        }
+      }
+    },
+    {
+      "service": "worker",
+      "metric": "queue_depth",
+      "source": {
+        "query": "rabbitmq_queue_messages{queue='main'}"
+      },
+      "detector": {
+        "algorithm": "isolation_forest",
+        "params": {
+          "contamination": 0.03,
+          "n_estimators": 200,
+          "random_state": 0
+        }
+      }
+    },
+    {
+      "service": "db",
+      "metric": "query_latency_p99_ms",
+      "source": {
+        "type": "clickhouse",
+        "clickhouse": {
+          "host": "clickhouse.internal",
+          "port": 8123,
+          "user": "default",
+          "password": "",
+          "database": "metrics"
+        },
+        "query": "SELECT toStartOfMinute(ts) AS t, quantile(0.99)(latency_ms) AS v FROM query_log WHERE ts BETWEEN {start} AND {end} GROUP BY t ORDER BY t",
+        "time_range": { "lookback_days": 7 }
+      },
+      "detector": {
+        "algorithm": "mad",
+        "params": { "threshold": 3.5 }
+      }
+    },
+    {
+      "service": "api-gateway",
+      "metric": "error_rate",
+      "source": {
+        "query": "sum(rate(http_requests_total{service='api-gateway', status=~'5..'}[1m])) / sum(rate(http_requests_total{service='api-gateway'}[1m]))"
+      },
+      "output": {
+        "clickhouse": { "table": "anomaly_results" },
+        "console": true,
+        "only_anomalies": false
+      }
+    }
+  ],
+  "continue_on_error": true
+}
