@@ -1,0 +1,6 @@
+apiVersion: v2
+name: anomaly-detector
+description: Airflow + Kubernetes infrastructure for the anomaly-detector pipeline
+type: application
+version: 0.1.0
+appVersion: "latest"
